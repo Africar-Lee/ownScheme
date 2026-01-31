@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 {- HLINT ignore "Use <&>" -}
 
@@ -16,6 +17,31 @@ eval val@(Bool _) = return val
 eval val@(Vector _) = return val
 eval val@(Character _) = return val
 eval (List [Atom "quote", val]) = return val
+eval (List [Atom "if", condition, conseq, alt]) = do
+  result <- eval condition
+  case result of
+    Bool False -> eval alt
+    Bool True -> eval conseq
+    _ -> throwError $ TypeMismatch "Boolean" condition
+eval (List (Atom "cond" : clauses)) = do
+  case clauses of
+    [] -> throwError $ NumArgs 1 []
+    ((List [condition, expr]) : cs) -> do
+      checkcond <- eval condition
+      case checkcond of
+        Atom "else" -> eval expr
+        Bool True -> eval expr
+        Bool False -> eval (List (Atom "cond" : cs))
+    _ -> throwError $ BadSpecialForm "(cond ((<test>) <expr>))" (head clauses)
+eval (List (Atom "case" : key : clauses)) = do
+  case clauses of
+    [] -> return $ Atom "unspecified"
+    (List [List xs, expr] : cs) -> do
+      res <- eval key
+      if res `elem` xs
+        then eval expr
+        else eval (List (Atom "case" : key : cs))
+    _ -> throwError $ BadSpecialForm "(case <key> ((<test1>) <expr1>)..)" (head clauses)
 eval (List (Atom func : args)) = mapM eval args >>= apply func
 eval val@(Atom _) = return val
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
@@ -36,6 +62,8 @@ primitives =
     ("mod", integerBinOp mod),
     ("quotient", integerBinOp quot),
     ("remainder", integerBinOp rem),
+    -- 一般比较
+    ("eqv?", eqv),
     -- 数值比较
     ("=", boolBinOp unpackFloat (==)),
     ("<", boolBinOp unpackFloat (<)),
@@ -64,7 +92,11 @@ primitives =
     ("float?", unaryOp isFloat),
     -- 符号处理
     ("symbol->string", unaryOp sym2str),
-    ("string->symbol", unaryOp str2sym)
+    ("string->symbol", unaryOp str2sym),
+    -- 列表处理
+    ("cons", cons),
+    ("car", car),
+    ("cdr", cdr)
   ]
 
 unaryOp :: (LispVal -> LispVal) -> [LispVal] -> ThrowsError LispVal
@@ -96,6 +128,7 @@ boolBinOp unpacker op params = do
   unpacked <- mapM unpacker params
   return . Bool . and $ zipWith op unpacked (tail unpacked)
 
+-- primitives
 isSymbol, isString, isNumber, isBool, isList, isPair, isVector, isChar, isFloat :: LispVal -> LispVal
 isSymbol (Atom _) = Bool True
 isSymbol _ = Bool False
@@ -128,6 +161,54 @@ sym2str v = v
 str2sym :: LispVal -> LispVal
 str2sym (String content) = Atom content
 str2sym v = v
+
+cons :: [LispVal] -> ThrowsError LispVal
+cons [v, List []] = return $ List [v]
+cons [v, List vs] = return $ List (v : vs)
+cons [v, DottedList [] d] = return $ DottedList [v] d
+cons [v, DottedList vs d] = return $ DottedList (v : vs) d
+cons [v1, v2] = return $ DottedList [v1] v2
+cons badArgList = throwError $ NumArgs 2 badArgList
+
+car :: [LispVal] -> ThrowsError LispVal
+car [List (x : _)] = return x
+car [DottedList (x : _) _] = return x
+car [badArg] = throwError $ TypeMismatch "pair" badArg
+car badArgList = throwError $ NumArgs 1 badArgList
+
+cdr :: [LispVal] -> ThrowsError LispVal
+cdr [List (_ : xs)] = return $ List xs
+cdr [DottedList [_] x] = return x
+cdr [DottedList (_ : xs) x] = return $ DottedList xs x
+cdr [badArg] = throwError $ TypeMismatch "pair" badArg
+cdr badArgList = throwError $ NumArgs 1 badArgList
+
+eqv :: [LispVal] -> ThrowsError LispVal
+eqv [Bool arg1, Bool arg2] = return $ Bool $ arg1 == arg2
+eqv [Float arg1, Float arg2] = return $ Bool $ arg1 == arg2
+eqv [Float arg1, Number arg2] = return $ Bool $ arg1 == fromIntegral arg2
+eqv [Number arg1, Float arg2] = return $ Bool $ fromIntegral arg1 == arg2
+eqv [Number arg1, Number arg2] = return $ Bool $ arg1 == arg2
+eqv [String arg1, String arg2] = return $ Bool $ arg1 == arg2
+eqv [Atom arg1, Atom arg2] = return $ Bool $ arg1 == arg2
+eqv [DottedList xs x, DottedList ys y] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
+eqv [List arg1, List arg2] =
+  return $
+    Bool $
+      (length arg1 == length arg2)
+        && all eqvPair (zip arg1 arg2)
+  where
+    eqvPair (x1, x2) = case eqv [x1, x2] of
+      Left _ -> False
+      Right (Bool val) -> val
+eqv [_, _] = return $ Bool False
+eqv badArgList = throwError $ NumArgs 2 badArgList
+
+instance Eq LispVal where
+  (==) a b = case eqv [a, b] of
+    Right (Bool True) -> True
+    Right (Bool False) -> False
+    _ -> False
 
 -- utils
 unpackInt :: LispVal -> ThrowsError Integer

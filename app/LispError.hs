@@ -32,6 +32,7 @@ showError (TypeMismatch expected found) =
     ++ ", found "
     ++ show found
 showError (Parser parseErr) = "Parse error at " ++ show parseErr
+showError (Default errMsg) = "Encounter error: " ++ show errMsg
 
 instance Show LispError where show = showError
 
