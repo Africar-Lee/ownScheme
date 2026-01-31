@@ -2,7 +2,9 @@
 
 module Parser (readExpr, parseExpr) where
 
+import Control.Monad.Except
 import Data.Char (digitToInt)
+import LispError
 import LispTypes
 import Numeric (readHex, readInt, readOct)
 import Text.ParserCombinators.Parsec hiding (spaces)
@@ -168,7 +170,7 @@ parseExpr =
       return x
 
 -- 读出表达式
-readExpr :: String -> LispVal
+readExpr :: String -> ThrowsError LispVal
 readExpr input = case parse parseExpr "lisp" input of
-  Left err -> String $ "No match: " ++ show err
-  Right val -> val
+  Left err -> throwError $ Parser err
+  Right val -> return val

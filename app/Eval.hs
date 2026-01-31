@@ -1,24 +1,33 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
+{- HLINT ignore "Use <&>" -}
+
 module Eval where
 
+import Control.Monad.Except
+import LispError
 import LispTypes
 
-eval :: LispVal -> LispVal
-eval val@(String _) = val
-eval val@(Number _) = val
-eval val@(Float _) = val
-eval val@(Bool _) = val
-eval val@(Vector _) = val
-eval val@(Character _) = val
-eval (List [Atom "quote", val]) = val
-eval (List (Atom func : args)) = apply func $ map eval args
-eval val@(Atom _) = val
+eval :: LispVal -> ThrowsError LispVal
+eval val@(String _) = return val
+eval val@(Number _) = return val
+eval val@(Float _) = return val
+eval val@(Bool _) = return val
+eval val@(Vector _) = return val
+eval val@(Character _) = return val
+eval (List [Atom "quote", val]) = return val
+eval (List (Atom func : args)) = mapM eval args >>= apply func
+eval val@(Atom _) = return val
+eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-apply :: String -> [LispVal] -> LispVal
-apply func args = maybe (Bool False) ($ args) $ lookup func primitives
+apply :: String -> [LispVal] -> ThrowsError LispVal
+apply func args =
+  maybe
+    (throwError $ NotFunction "Unrecognized primitive function args" func)
+    ($ args)
+    (lookup func primitives)
 
-primitives :: [(String, [LispVal] -> LispVal)]
+primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives =
   [ ("+", numericBinOp (+) (+)),
     ("-", numericBinOp (-) (-)),
@@ -58,27 +67,34 @@ primitives =
     ("string->symbol", unaryOp str2sym)
   ]
 
-unaryOp :: (LispVal -> LispVal) -> [LispVal] -> LispVal
-unaryOp f [v] = f v
-unaryOp _ _ = Bool False
+unaryOp :: (LispVal -> LispVal) -> [LispVal] -> ThrowsError LispVal
+unaryOp _ [] = throwError $ NumArgs 1 []
+unaryOp f [v] = return $ f v
+unaryOp _ [_, _] = throwError $ NumArgs 1 []
 
-integerBinOp :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
-integerBinOp op params = Number $ foldl1 op $ map unpackInt params
+integerBinOp :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
+integerBinOp _ [] = throwError $ NumArgs 2 []
+integerBinOp _ singleval@[_] = throwError $ NumArgs 2 singleval
+integerBinOp op params = mapM unpackInt params >>= return . Number . foldl1 op
 
 numericBinOp ::
   (Integer -> Integer -> Integer) ->
   (Double -> Double -> Double) ->
   [LispVal] ->
-  LispVal
+  ThrowsError LispVal
+numericBinOp _ _ [] = throwError $ NumArgs 2 []
+numericBinOp _ _ singleval@[_] = throwError $ NumArgs 2 singleval
 numericBinOp intOp floatOp params =
   if anyFloats params
-    then Float $ foldl1 floatOp $ map unpackFloat params
-    else Number $ foldl1 intOp $ map unpackInt params
+    then mapM unpackFloat params >>= return . Float . foldl1 floatOp
+    else mapM unpackInt params >>= return . Number . foldl1 intOp
 
-boolBinOp :: (LispVal -> a) -> (a -> a -> Bool) -> [LispVal] -> LispVal
-boolBinOp unpacker op params = Bool $ and $ zipWith op unpacked (tail unpacked)
-  where
-    unpacked = map unpacker params
+boolBinOp :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBinOp _ _ [] = throwError $ NumArgs 2 []
+boolBinOp _ _ singleval@[_] = throwError $ NumArgs 2 singleval
+boolBinOp unpacker op params = do
+  unpacked <- mapM unpacker params
+  return . Bool . and $ zipWith op unpacked (tail unpacked)
 
 isSymbol, isString, isNumber, isBool, isList, isPair, isVector, isChar, isFloat :: LispVal -> LispVal
 isSymbol (Atom _) = Bool True
@@ -114,34 +130,27 @@ str2sym (String content) = Atom content
 str2sym v = v
 
 -- utils
-unpackInt :: LispVal -> Integer
-unpackInt (Number n) = n
-unpackInt (String n) =
-  let parsed = reads n :: [(Integer, String)]
-   in if null parsed
-        then 0
-        else fst $ head parsed
+unpackInt :: LispVal -> ThrowsError Integer
+unpackInt (Number n) = return n
 unpackInt (List [n]) = unpackInt n
-unpackInt _ = 0
+unpackInt notNum = throwError $ TypeMismatch "number" notNum
 
 anyFloats :: [LispVal] -> Bool
-anyFloats = any $ unpackBool . isFloat
+anyFloats = any $ getBool . isFloat
+  where
+    getBool (Bool True) = True
+    getBool (Bool False) = False
 
-unpackFloat :: LispVal -> Double
-unpackFloat (Float n) = n
-unpackFloat (Number n) = fromIntegral n
-unpackFloat (String n) = case reads n :: [(Double, String)] of
-  [(val, _)] -> val
-  _ -> 0
+unpackFloat :: LispVal -> ThrowsError Double
+unpackFloat (Float n) = return n
+unpackFloat (Number n) = return $ fromIntegral n
 unpackFloat (List [n]) = unpackFloat n
-unpackFloat _ = 0
+unpackFloat notNum = throwError $ TypeMismatch "number" notNum
 
-unpackStr :: LispVal -> String
-unpackStr (String s) = s
-unpackStr (Number s) = show s
-unpackStr (Bool s) = show s
-unpackStr _ = ""
+unpackStr :: LispVal -> ThrowsError String
+unpackStr (String s) = return s
+unpackStr notStr = throwError $ TypeMismatch "string" notStr
 
-unpackBool :: LispVal -> Bool
-unpackBool (Bool b) = b
-unpackBool _ = False
+unpackBool :: LispVal -> ThrowsError Bool
+unpackBool (Bool b) = return b
+unpackBool notBool = throwError $ TypeMismatch "boolean" notBool
