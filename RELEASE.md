@@ -47,23 +47,19 @@ git push origin v0.1.0
 
 ### Windows
 - `carScheme-v0.1.0-windows-x86_64.zip` - Windows可执行文件包
-- `carScheme-v0.1.0-windows-x86_64.zip.sha256` - 校验和
 
 ### macOS
 - `carScheme-v0.1.0-macos-arm64.tar.gz` - macOS可执行文件包
-- `carScheme-v0.1.0-macos-arm64.tar.gz.sha256` - 校验和
 
 ### Linux x86_64
 - `carScheme-v0.1.0-linux-x86_64.tar.gz` - 通用Linux包
 - `carscheme_0.1.0_amd64.deb` - Debian/Ubuntu包
 - `carscheme-0.1.0-1.x86_64.rpm` - RedHat/Fedora/CentOS包
-- 对应的`.sha256`校验和文件
 
 ### Linux ARM64
 - `carScheme-v0.1.0-linux-arm64.tar.gz` - 通用Linux包
 - `carscheme_0.1.0_arm64.deb` - Debian/Ubuntu包
 - `carscheme-0.1.0-1.arm64.rpm` - RedHat/Fedora/CentOS包
-- 对应的`.sha256`校验和文件
 
 ## 安装说明
 
@@ -125,20 +121,6 @@ sudo dnf install carscheme-0.1.0-1.x86_64.rpm
 
 # 运行
 carScheme
-```
-
-## 验证下载文件
-
-使用SHA256校验和验证文件完整性：
-
-```bash
-# Linux/macOS
-sha256sum -c carScheme-v0.1.0-linux-x86_64.tar.gz.sha256
-
-# Windows (PowerShell)
-$hash = Get-FileHash carScheme-v0.1.0-windows-x86_64.zip -Algorithm SHA256
-$expected = Get-Content carScheme-v0.1.0-windows-x86_64.zip.sha256
-if ($hash.Hash -eq $expected.Split()[0]) { "OK" } else { "FAILED" }
 ```
 
 ## 版本号规范
@@ -213,3 +195,4 @@ ghc: '9.6.7'  # 修改为所需版本
 2. **静态链接**：Linux版本使用静态链接，减少依赖问题
 3. **权限**：确保GitHub仓库有写入权限（Settings > Actions > General > Workflow permissions）
 4. **标签格式**：必须以`v`开头（如`v0.1.0`）才会触发发布流程
+5. **文件完整性**：从GitHub Releases下载的文件由GitHub保证完整性

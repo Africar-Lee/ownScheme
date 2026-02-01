@@ -107,22 +107,11 @@ jobs:
           tar czf $archive_name.tar.gz $archive_name
           echo "ARCHIVE_NAME=$archive_name.tar.gz" >> $GITHUB_ENV
 
-      - name: Generate checksum
-        shell: bash
-        run: |
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            sha256sum $ARCHIVE_NAME > $ARCHIVE_NAME.sha256
-          else
-            shasum -a 256 $ARCHIVE_NAME > $ARCHIVE_NAME.sha256
-          fi
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-${{ matrix.arch }}-binary
-          path: |
-            ${{ env.ARCHIVE_NAME }}
-            ${{ env.ARCHIVE_NAME }}.sha256
+          path: ${{ env.ARCHIVE_NAME }}
 
   build-linux-arm64:
     name: Build Linux ARM64
@@ -160,16 +149,11 @@ jobs:
           tar czf $archive_name.tar.gz $archive_name
           echo "ARCHIVE_NAME=$archive_name.tar.gz" >> $GITHUB_ENV
 
-      - name: Generate checksum
-        run: shasum -a 256 $ARCHIVE_NAME > $ARCHIVE_NAME.sha256
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-arm64-binary
-          path: |
-            ${{ env.ARCHIVE_NAME }}
-            ${{ env.ARCHIVE_NAME }}.sha256
+          path: ${{ env.ARCHIVE_NAME }}
 
   package-linux:
     name: Create Linux packages
@@ -231,11 +215,6 @@ jobs:
             carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/README.md=/usr/share/doc/carscheme/README.md \
             carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/LICENSE=/usr/share/doc/carscheme/LICENSE
 
-      - name: Generate checksums
-        run: |
-          sha256sum *.deb > carscheme-${{ github.ref_name }}-linux-${{ matrix.arch }}.deb.sha256
-          sha256sum *.rpm > carscheme-${{ github.ref_name }}-linux-${{ matrix.arch }}.rpm.sha256
-
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
@@ -243,7 +222,6 @@ jobs:
           path: |
             *.deb
             *.rpm
-            *.sha256
 
   release:
     name: Create Release
@@ -269,6 +247,5 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/*.deb
             artifacts/**/*.rpm
-            artifacts/**/*.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
