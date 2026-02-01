@@ -169,7 +169,11 @@ cabal run carScheme -- script.scm [args...]
 
 ### 标准库
 
-解释器会自动加载`stdlib.scm`，提供以下函数：
+项目提供了`stdlib.scm`标准库文件，包含以下函数。使用前需要手动加载：
+
+```scheme
+(load "stdlib.scm")
+```
 
 #### 逻辑函数
 
