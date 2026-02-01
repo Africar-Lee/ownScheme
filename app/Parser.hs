@@ -4,7 +4,6 @@ module Parser (readExpr, parseExpr) where
 
 import Control.Monad.Except
 import Data.Char (digitToInt)
-import LispError
 import LispTypes
 import Numeric (readHex, readInt, readOct)
 import Text.ParserCombinators.Parsec hiding (spaces)

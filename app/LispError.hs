@@ -3,41 +3,23 @@
 module LispError where
 
 import Control.Monad.Except
-import LispTypes
-import Text.ParserCombinators.Parsec (ParseError)
+import LispTypes (IOThrowsError, ThrowsError)
 
-data LispError
-  = NumArgs Integer [LispVal] -- 参数个数不对
-  | TypeMismatch String LispVal -- 类型不匹配
-  | Parser ParseError -- 解析错误
-  | BadSpecialForm String LispVal -- 错误的特殊格式
-  | NotFunction String String -- 不是一个函数
-  | UnboundVar String String -- 未定义的变量
-  | Default String -- 其他通用错误
-
-type ThrowsError = Either LispError
-
-showError :: LispError -> String
-showError (UnboundVar message varname) = message ++ ": " ++ varname
-showError (BadSpecialForm message form) = message ++ ": " ++ show form
-showError (NotFunction message func) = message ++ ": " ++ show func
-showError (NumArgs expected found) =
-  "Expected "
-    ++ show expected
-    ++ " args; found values "
-    ++ unwordsList found
-showError (TypeMismatch expected found) =
-  "Invalid type: expected "
-    ++ expected
-    ++ ", found "
-    ++ show found
-showError (Parser parseErr) = "Parse error at " ++ show parseErr
-showError (Default errMsg) = "Encounter error: " ++ show errMsg
-
-instance Show LispError where show = showError
+-- import Text.ParserCombinators.Parsec (ParseError)
 
 trapError :: (MonadError e m, Show e) => m String -> m String
 trapError action = catchError action (return . show)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
+
+-- 辅助函数：将纯错误转换为 IO 错误
+liftThrows :: ThrowsError a -> IOThrowsError a
+liftThrows (Left err) = throwError err
+liftThrows (Right val) = return val
+
+-- 辅助函数：运行并捕获 IO 错误
+runIOThrows :: IOThrowsError String -> IO String
+runIOThrows action = do
+  result <- runExceptT (trapError action)
+  return $ extractValue result
