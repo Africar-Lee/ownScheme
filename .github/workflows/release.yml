@@ -1,0 +1,274 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            arch: x86_64
+            runner: windows-latest
+            ghc: '9.6.7'
+            cabal: '3.10'
+          - os: macos
+            arch: arm64
+            runner: macos-14
+            ghc: '9.6.7'
+            cabal: '3.10'
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-latest
+            ghc: '9.6.7'
+            cabal: '3.10'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cabal }}
+
+      - name: Cache Cabal packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-${{ matrix.arch }}-cabal-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-cabal-
+
+      - name: Update Cabal package list
+        run: cabal update
+
+      - name: Build (Windows/macOS)
+        if: matrix.os != 'linux'
+        run: |
+          cabal build --enable-executable-stripping
+          cabal install --installdir=./bin --install-method=copy
+
+      - name: Build (Linux - Static)
+        if: matrix.os == 'linux'
+        run: |
+          cabal build --enable-executable-stripping --enable-executable-static
+          cabal install --installdir=./bin --install-method=copy --enable-executable-static
+
+      - name: Create archive (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $archiveName = "carScheme-$version-windows-x86_64"
+          New-Item -ItemType Directory -Path $archiveName
+          Copy-Item bin/carScheme.exe $archiveName/
+          Copy-Item stdlib.scm $archiveName/
+          Copy-Item README.md $archiveName/
+          Copy-Item LICENSE $archiveName/
+          Compress-Archive -Path $archiveName -DestinationPath "$archiveName.zip"
+          echo "ARCHIVE_NAME=$archiveName.zip" >> $env:GITHUB_ENV
+
+      - name: Create archive (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          version="${{ github.ref_name }}"
+          archive_name="carScheme-$version-macos-arm64"
+          mkdir -p $archive_name
+          cp bin/carScheme $archive_name/
+          cp stdlib.scm $archive_name/
+          cp README.md $archive_name/
+          cp LICENSE $archive_name/
+          tar czf $archive_name.tar.gz $archive_name
+          echo "ARCHIVE_NAME=$archive_name.tar.gz" >> $GITHUB_ENV
+
+      - name: Create archive (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          version="${{ github.ref_name }}"
+          archive_name="carScheme-$version-linux-x86_64"
+          mkdir -p $archive_name
+          cp bin/carScheme $archive_name/
+          cp stdlib.scm $archive_name/
+          cp README.md $archive_name/
+          cp LICENSE $archive_name/
+          tar czf $archive_name.tar.gz $archive_name
+          echo "ARCHIVE_NAME=$archive_name.tar.gz" >> $GITHUB_ENV
+
+      - name: Generate checksum
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            sha256sum $ARCHIVE_NAME > $ARCHIVE_NAME.sha256
+          else
+            shasum -a 256 $ARCHIVE_NAME > $ARCHIVE_NAME.sha256
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}-binary
+          path: |
+            ${{ env.ARCHIVE_NAME }}
+            ${{ env.ARCHIVE_NAME }}.sha256
+
+  build-linux-arm64:
+    name: Build Linux ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build in ARM64 container
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v $PWD:/workspace \
+            -w /workspace \
+            haskell:9.6.7 \
+            bash -c "
+              cabal update && \
+              cabal build --enable-executable-stripping --enable-executable-static && \
+              cabal install --installdir=./bin --install-method=copy --enable-executable-static
+            "
+
+      - name: Create archive
+        run: |
+          version="${{ github.ref_name }}"
+          archive_name="carScheme-$version-linux-arm64"
+          mkdir -p $archive_name
+          cp bin/carScheme $archive_name/
+          cp stdlib.scm $archive_name/
+          cp README.md $archive_name/
+          cp LICENSE $archive_name/
+          tar czf $archive_name.tar.gz $archive_name
+          echo "ARCHIVE_NAME=$archive_name.tar.gz" >> $GITHUB_ENV
+
+      - name: Generate checksum
+        run: shasum -a 256 $ARCHIVE_NAME > $ARCHIVE_NAME.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-binary
+          path: |
+            ${{ env.ARCHIVE_NAME }}
+            ${{ env.ARCHIVE_NAME }}.sha256
+
+  package-linux:
+    name: Create Linux packages
+    needs: [build, build-linux-arm64]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-binary
+
+      - name: Extract binary
+        run: |
+          tar xzf carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz
+
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm
+          sudo gem install --no-document fpm
+
+      - name: Create DEB package
+        run: |
+          version="${{ github.ref_name }}"
+          version="${version#v}"
+          fpm -s dir -t deb \
+            -n carscheme \
+            -v "$version" \
+            --architecture ${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
+            --description "A Scheme interpreter written in Haskell" \
+            --url "https://github.com/${{ github.repository }}" \
+            --maintainer "Africar-Lee <africar@sina.com>" \
+            --license "MIT" \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/carScheme=/usr/bin/carScheme \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/stdlib.scm=/usr/share/carscheme/stdlib.scm \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/README.md=/usr/share/doc/carscheme/README.md \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/LICENSE=/usr/share/doc/carscheme/LICENSE
+
+      - name: Create RPM package
+        run: |
+          version="${{ github.ref_name }}"
+          version="${version#v}"
+          fpm -s dir -t rpm \
+            -n carscheme \
+            -v "$version" \
+            --architecture ${{ matrix.arch }} \
+            --description "A Scheme interpreter written in Haskell" \
+            --url "https://github.com/${{ github.repository }}" \
+            --maintainer "Africar-Lee <africar@sina.com>" \
+            --license "MIT" \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/carScheme=/usr/bin/carScheme \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/stdlib.scm=/usr/share/carscheme/stdlib.scm \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/README.md=/usr/share/doc/carscheme/README.md \
+            carScheme-${{ github.ref_name }}-linux-${{ matrix.arch }}/LICENSE=/usr/share/doc/carscheme/LICENSE
+
+      - name: Generate checksums
+        run: |
+          sha256sum *.deb > carscheme-${{ github.ref_name }}-linux-${{ matrix.arch }}.deb.sha256
+          sha256sum *.rpm > carscheme-${{ github.ref_name }}-linux-${{ matrix.arch }}.rpm.sha256
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-packages
+          path: |
+            *.deb
+            *.rpm
+            *.sha256
+
+  release:
+    name: Create Release
+    needs: [build, build-linux-arm64, package-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

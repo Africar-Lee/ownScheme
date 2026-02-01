@@ -2,7 +2,19 @@
 
 一个用Haskell实现的Scheme语言解释器。
 
-## 构建
+## 安装
+
+### 预编译版本（推荐）
+
+从[Releases页面](https://github.com/Africar-Lee/ownScheme/releases)下载适合你平台的预编译版本：
+
+- **Windows x86_64**: 下载`.zip`文件并解压
+- **macOS ARM64**: 下载`.tar.gz`文件并解压
+- **Linux x86_64/ARM64**: 下载`.tar.gz`、`.deb`或`.rpm`包
+
+详细安装说明请参考[RELEASE.md](RELEASE.md)。
+
+### 从源码构建
 
 使用cabal构建项目：
 
@@ -306,6 +318,17 @@ cabal run carScheme -- script.scm [args...]
 - 解析错误
 - 未定义的变量
 - 错误的特殊形式
+
+## 发布
+
+本项目使用GitHub Actions自动构建多平台版本。每次推送版本标签（如`v0.1.0`）时，会自动构建并发布以下平台的可执行文件：
+
+- Windows x86_64
+- macOS ARM64
+- Linux x86_64 (tar.gz, deb, rpm)
+- Linux ARM64 (tar.gz, deb, rpm)
+
+详细的发布流程和配置说明请参考[RELEASE.md](RELEASE.md)。
 
 ## 许可证
 
