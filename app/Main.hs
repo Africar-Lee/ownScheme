@@ -1,7 +1,10 @@
 module Main where
 
-import Eval
 -- import LispEnv
+
+import Data.Char (isSpace)
+import Eval
+import LispEnv (bindVar)
 import LispError
 import LispTypes
 import Parser
@@ -11,16 +14,22 @@ import System.IO
 main :: IO ()
 main = do
   args <- getArgs
-  case length args of
-    0 -> runRepl
-    1 -> runOne $ head args
-    _ -> putStrLn "Program takes only 0 or 1 argument"
+  if null args
+    then runRepl
+    else runOne args
 
-runOne :: String -> IO ()
-runOne expr = primitiveBindings >>= flip evalAndPrint expr
+runOne :: [String] -> IO ()
+runOne args = do
+  env <- primitiveBindings >>= flip bindVar [("args", List $ map String $ drop 1 args)]
+  runIOThrows (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStr stderr
 
 runRepl :: IO ()
-runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Lisp >>> ") . evalAndPrint
+runRepl = do
+  env <- primitiveBindings
+  until_ (== "quit") (readPrompt "Lisp >>> ") $ \input ->
+    if null input || all isSpace input
+      then return ()
+      else evalAndPrint env input
 
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout

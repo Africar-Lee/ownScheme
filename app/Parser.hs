@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
-module Parser (readExpr, parseExpr) where
+module Parser (readExpr, parseExpr, readExprList) where
 
 import Control.Monad.Except
 import Data.Char (digitToInt)
@@ -168,8 +168,14 @@ parseExpr =
       _ <- char ')'
       return x
 
--- 读出表达式
-readExpr :: String -> ThrowsError LispVal
-readExpr input = case parse parseExpr "lisp" input of
+readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow parser input = case parse parser "lisp" input of
   Left err -> throwError $ Parser err
   Right val -> return val
+
+-- 读出表达式
+readExpr :: String -> ThrowsError LispVal
+readExpr = readOrThrow parseExpr
+
+readExprList :: String -> ThrowsError [LispVal]
+readExprList = readOrThrow $ endBy parseExpr spaces

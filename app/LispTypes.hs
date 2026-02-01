@@ -2,6 +2,7 @@ module LispTypes where
 
 import Control.Monad.Except
 import Data.IORef
+import GHC.IO.Handle (Handle)
 import Text.ParserCombinators.Parsec (ParseError)
 
 data LispVal
@@ -16,6 +17,8 @@ data LispVal
   | Vector [LispVal]
   | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
   | Func {paramemters :: [String], vararg :: Maybe String, body :: [LispVal], closure :: Env}
+  | IOFunc ([LispVal] -> IOThrowsError LispVal)
+  | Port Handle
 
 type Env = IORef [(String, IORef LispVal)]
 
@@ -78,3 +81,5 @@ showVal (Func {paramemters = args, vararg = varargs, body = _, closure = _}) =
            Just arg -> " . " ++ arg
        )
     ++ ") ...)"
+showVal (IOFunc _) = "<IO primitive>"
+showVal (Port _) = "<IO port>"
