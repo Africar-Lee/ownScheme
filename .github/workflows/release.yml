@@ -133,8 +133,8 @@ jobs:
             haskell:9.6.7 \
             bash -c "
               cabal update && \
-              cabal build --enable-executable-stripping --enable-executable-static && \
-              cabal install --installdir=./bin --install-method=copy --enable-executable-static
+              cabal build --enable-executable-stripping && \
+              cabal install --installdir=./bin --install-method=copy
             "
 
       - name: Create archive
